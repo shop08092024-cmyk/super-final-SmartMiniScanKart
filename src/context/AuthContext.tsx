@@ -73,19 +73,43 @@ async function syncRoleWithEmployeeMembership(
       }
 
       if (invitedEmployee) {
-        // Link the employee record to this user automatically
-        const { error: claimError } = await supabase
-          .from("employees")
-          .update({
-            user_id: currentUser.id,
-            status: "active",
-            joined_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", invitedEmployee.id);
+        let claimed = false;
+        // Try to auto-claim using RPC first (most robust, bypasses RLS issues)
+        try {
+          const { data: rpcSuccess, error: rpcError } = await supabase
+            .rpc("claim_employee_invite_by_email");
+          
+          if (!rpcError && rpcSuccess) {
+            console.log("Successfully auto-claimed employee record by email matching (RPC):", currentUser.email);
+            claimed = true;
+          } else if (rpcError) {
+            console.warn("claim_employee_invite_by_email RPC returned error, falling back:", rpcError);
+          }
+        } catch (rpcErr) {
+          console.error("claim_employee_invite_by_email RPC failed, trying fallback:", rpcErr);
+        }
 
-        if (!claimError) {
-          console.log("Successfully auto-claimed employee record by email matching:", currentUser.email);
+        if (!claimed) {
+          // Link the employee record to this user automatically (client-side fallback)
+          const { error: claimError } = await supabase
+            .from("employees")
+            .update({
+              user_id: currentUser.id,
+              status: "active",
+              joined_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", invitedEmployee.id);
+
+          if (!claimError) {
+            console.log("Successfully auto-claimed employee record by email matching (client-side fallback):", currentUser.email);
+            claimed = true;
+          } else {
+            console.error("Failed to auto-claim employee record:", claimError);
+          }
+        }
+
+        if (claimed) {
           return {
             role: "employee",
             employeeInfo: {
@@ -94,8 +118,6 @@ async function syncRoleWithEmployeeMembership(
               name: invitedEmployee.name,
             },
           };
-        } else {
-          console.error("Failed to auto-claim employee record:", claimError);
         }
       }
     }
@@ -206,20 +228,23 @@ export function AuthProvider({
 
         setSession(session);
         setUser(session?.user ?? null);
-        setLoading(false);
 
         if (session?.user) {
-          syncRoleWithEmployeeMembership(session.user).then(
-            ({ role: resolvedRole, employeeInfo: empInfo }) => {
-              if (mounted) {
-                setRoleState(resolvedRole);
-                setEmployeeInfo(empInfo);
-              }
-            }
-          );
+          const { role: resolvedRole, employeeInfo: empInfo } =
+            await syncRoleWithEmployeeMembership(session.user);
+          if (mounted) {
+            setRoleState(resolvedRole);
+            setEmployeeInfo(empInfo);
+          }
+        } else {
+          if (mounted) {
+            setRoleState("onboarding");
+            setEmployeeInfo(null);
+          }
         }
       } catch (error) {
         console.error("Failed to initialize auth session:", error);
+      } finally {
         if (mounted) setLoading(false);
       }
     };
@@ -232,23 +257,29 @@ export function AuthProvider({
       async (_event, session) => {
         if (!mounted) return;
 
+        setLoading(true);
         setSession(session);
         setUser(session?.user ?? null);
-        setLoading(false);
 
-        if (session?.user) {
-          const { role: resolvedRole, employeeInfo: empInfo } =
-            await syncRoleWithEmployeeMembership(session.user);
+        try {
+          if (session?.user) {
+            const { role: resolvedRole, employeeInfo: empInfo } =
+              await syncRoleWithEmployeeMembership(session.user);
 
-          if (mounted) {
-            setRoleState(resolvedRole);
-            setEmployeeInfo(empInfo);
+            if (mounted) {
+              setRoleState(resolvedRole);
+              setEmployeeInfo(empInfo);
+            }
+          } else {
+            if (mounted) {
+              setRoleState("onboarding");
+              setEmployeeInfo(null);
+            }
           }
-        } else {
-          if (mounted) {
-            setRoleState("onboarding");
-            setEmployeeInfo(null);
-          }
+        } catch (error) {
+          console.error("Error in onAuthStateChange role sync:", error);
+        } finally {
+          if (mounted) setLoading(false);
         }
       }
     );

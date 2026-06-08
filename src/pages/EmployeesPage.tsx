@@ -69,19 +69,25 @@ const EmployeesPage = () => {
 
   const loadEmployees = async () => {
     if (!user) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("employees")
-      .select("*")
-      .eq("shop_owner_id", user.id)
-      .order("created_at", { ascending: false });
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("shop_owner_id", user.id)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      toast({ title: "Failed to load employees", description: error.message, variant: "destructive" });
-    } else {
-      setEmployees((data ?? []) as EmployeeRecord[]);
+      if (error) {
+        toast({ title: "Failed to load employees", description: error.message, variant: "destructive" });
+      } else {
+        setEmployees((data ?? []) as EmployeeRecord[]);
+      }
+    } catch (err: any) {
+      console.error("Failed to load employees:", err);
+      toast({ title: "Failed to load employees", description: err.message || String(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -187,54 +193,70 @@ const EmployeesPage = () => {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
-    setSaving(true);
-    const { error } = await supabase.from("employees").update({
-      name: editForm.name.trim(),
-      phone: editForm.phone.trim() || null,
-      opening_balance: parseFloat(editForm.opening_balance) || 0,
-      closing_balance: parseFloat(editForm.closing_balance) || 0,
-      collected_amount: parseFloat(editForm.collected_amount) || 0,
-      due_amount: parseFloat(editForm.due_amount) || 0,
-      orders_today: parseInt(editForm.orders_today) || 0,
-      status: editForm.status,
-      updated_at: new Date().toISOString(),
-    }).eq("id", editEmployee.id);
-    setSaving(false);
+    try {
+      setSaving(true);
+      const { error } = await supabase.from("employees").update({
+        name: editForm.name.trim(),
+        phone: editForm.phone.trim() || null,
+        opening_balance: parseFloat(editForm.opening_balance) || 0,
+        closing_balance: parseFloat(editForm.closing_balance) || 0,
+        collected_amount: parseFloat(editForm.collected_amount) || 0,
+        due_amount: parseFloat(editForm.due_amount) || 0,
+        orders_today: parseInt(editForm.orders_today) || 0,
+        status: editForm.status,
+        updated_at: new Date().toISOString(),
+      }).eq("id", editEmployee.id);
 
-    if (error) {
-      toast({ title: "Failed to update employee", description: error.message, variant: "destructive" });
-      return;
+      if (error) {
+        toast({ title: "Failed to update employee", description: error.message, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Employee updated successfully!" });
+      setEditEmployee(null);
+      await loadEmployees();
+    } catch (err: any) {
+      console.error("Failed to save employee changes:", err);
+      toast({ title: "Failed to update employee", description: err.message || String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
-    toast({ title: "Employee updated successfully!" });
-    setEditEmployee(null);
-    await loadEmployees();
   };
 
   const handleDelete = async (employee: EmployeeRecord) => {
-    const { error } = await supabase.from("employees").delete().eq("id", employee.id);
-    if (error) {
-      toast({ title: "Failed to remove employee", description: error.message, variant: "destructive" });
-      return;
+    try {
+      const { error } = await supabase.from("employees").delete().eq("id", employee.id);
+      if (error) {
+        toast({ title: "Failed to remove employee", description: error.message, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Employee removed", description: `${employee.name} has been removed.` });
+      setDeleteConfirm(null);
+      await loadEmployees();
+    } catch (err: any) {
+      console.error("Failed to delete employee:", err);
+      toast({ title: "Failed to remove employee", description: err.message || String(err), variant: "destructive" });
     }
-    toast({ title: "Employee removed", description: `${employee.name} has been removed.` });
-    setDeleteConfirm(null);
-    await loadEmployees();
   };
 
   const handleResetBalances = async (employee: EmployeeRecord) => {
-    const { error } = await supabase.from("employees").update({
-      opening_balance: 0,
-      closing_balance: 0,
-      collected_amount: 0,
-      due_amount: 0,
-      orders_today: 0,
-      updated_at: new Date().toISOString(),
-    }).eq("id", employee.id);
-    if (error) {
-      toast({ title: "Failed to reset balances", variant: "destructive" });
-    } else {
-      toast({ title: "Balances reset", description: `${employee.name}'s shift data has been cleared.` });
-      await loadEmployees();
+    try {
+      const { error } = await supabase.from("employees").update({
+        opening_balance: 0,
+        closing_balance: 0,
+        collected_amount: 0,
+        due_amount: 0,
+        orders_today: 0,
+        updated_at: new Date().toISOString(),
+      }).eq("id", employee.id);
+      if (error) {
+        toast({ title: "Failed to reset balances", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Balances reset", description: `${employee.name}'s shift data has been cleared.` });
+        await loadEmployees();
+      }
+    } catch (err: any) {
+      console.error("Failed to reset employee balances:", err);
+      toast({ title: "Failed to reset balances", description: err.message || String(err), variant: "destructive" });
     }
   };
 
