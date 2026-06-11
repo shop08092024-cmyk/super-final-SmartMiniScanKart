@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { ScanBarcode } from "lucide-react";
@@ -59,6 +59,20 @@ function DataLoader({ children }: { children: React.ReactNode }) {
 
 const AppRoutes = () => {
   const { session, role, loading } = useAuth();
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
+
+  useEffect(() => {
+    if (!loading) {
+      setShowTroubleshoot(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowTroubleshoot(true);
+    }, 40000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  const capturedErrors = (window as any).__capturedErrors || [];
 
   if (loading) {
     return (
@@ -69,7 +83,7 @@ const AppRoutes = () => {
           <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-accent/5 blur-3xl" />
         </div>
 
-        <div className="relative flex flex-col items-center animate-fade-in text-center">
+        <div className="relative flex flex-col items-center animate-fade-in text-center max-w-md w-full">
           <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 text-primary relative">
             <div className="absolute inset-0 rounded-3xl border border-primary/30 animate-ping opacity-75" />
             <div className="absolute inset-0 rounded-3xl border-4 border-primary/20 border-t-primary animate-spin" />
@@ -77,6 +91,30 @@ const AppRoutes = () => {
           </div>
           <h2 className="text-2xl font-extrabold tracking-tight text-foreground">MiniScanKart</h2>
           <p className="mt-1.5 text-sm font-medium text-muted-foreground animate-pulse">Loading workspace...</p>
+
+          {showTroubleshoot && (
+            <div className="mt-8 p-5 rounded-2xl border border-border bg-card/60 backdrop-blur-md text-left animate-slide-up space-y-3 w-full shadow-lg">
+              <h3 className="text-sm font-bold text-foreground">Trouble connecting?</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                If the workspace doesn't load shortly, it might be due to a connection drop or a database schema mismatch.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong>To manually reset a stuck session:</strong> Open your browser's Developer Tools (press F12), go to the **Console** tab, paste the following command, and press Enter:
+                <code className="block mt-1.5 p-2 bg-secondary/80 rounded font-mono text-[10px] select-all break-all">
+                  localStorage.clear(); sessionStorage.clear(); location.reload();
+                </code>
+              </p>
+              
+              {capturedErrors.length > 0 && (
+                <div className="max-h-28 overflow-y-auto rounded-xl bg-destructive/5 border border-destructive/10 p-3 text-[11px] font-mono text-destructive">
+                  <div className="font-semibold mb-1">Captured Errors:</div>
+                  {capturedErrors.map((err: string, i: number) => (
+                    <div key={i} className="border-b border-destructive/5 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0 leading-normal">{err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

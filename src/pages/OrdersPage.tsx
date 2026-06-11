@@ -149,7 +149,8 @@ const OrdersPage = () => {
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [payFilter, setPayFilter] = useState<PayFilter>("all");
-  const [cashierFilter, setCashierFilter] = useState<string>("all");
+  // Employees default to seeing only their own orders; admins see all
+  const [cashierFilter, setCashierFilter] = useState<string>(() => role === "employee" ? "my" : "all");
 
   // Extract unique cashier names from sales history for admin filtering
   const cashiers = useMemo(() => {

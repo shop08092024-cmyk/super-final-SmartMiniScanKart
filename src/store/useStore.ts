@@ -427,12 +427,16 @@ export const useStore = create<AppState>((set, get) => ({
         .eq("id", employeeId)
         .single();
 
-      if (empData) {
-        await supabase.from("employees").update({
-          collected_amount: (empData.collected_amount ?? 0) + total,
-          orders_today: (empData.orders_today ?? 0) + 1,
-          updated_at: new Date().toISOString(),
-        }).eq("id", employeeId);
+      const currentCollected = Number(empData?.collected_amount ?? 0);
+      const currentOrders = Number(empData?.orders_today ?? 0);
+      const { error: empUpdateError } = await supabase.from("employees").update({
+        collected_amount: currentCollected + total,
+        orders_today: currentOrders + 1,
+        updated_at: new Date().toISOString(),
+      }).eq("id", employeeId);
+
+      if (empUpdateError) {
+        console.error("Failed to update employee stats:", empUpdateError);
       }
     }
 
@@ -463,7 +467,8 @@ export const useStore = create<AppState>((set, get) => ({
       employeeId: employeeId ?? undefined,
     };
 
-    get().fetchAll(shopOwnerId);
+    // Refresh store data with the correct owner context
+    get().fetchAll(shopOwnerId).catch((e) => console.error("Post-checkout fetchAll failed:", e));
     set({ cart: [], orderCounter: s.orderCounter + 1 });
 
     return builtOrder;

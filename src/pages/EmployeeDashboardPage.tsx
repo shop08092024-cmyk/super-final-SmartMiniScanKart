@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { IndianRupee, ShoppingBag, TrendingUp, ScanBarcode, WalletCards, AlertCircle, Loader2, CreditCard, Smartphone, Banknote } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { IndianRupee, ShoppingBag, TrendingUp, ScanBarcode, WalletCards, AlertCircle, Loader2, CreditCard, Smartphone, Banknote, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ interface EmployeeSummaryRecord {
 }
 
 const EmployeeDashboardPage = () => {
-  const { user } = useAuth();
+  const { user, employeeInfo } = useAuth();
   const navigate = useNavigate();
   const [employeeRecord, setEmployeeRecord] = useState<EmployeeSummaryRecord | null>(null);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
@@ -32,37 +32,25 @@ const EmployeeDashboardPage = () => {
   const [savingBalance, setSavingBalance] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadEmployeeRecord = async () => {
-      if (!user) return;
-      setLoading(true);
+  const loadEmployeeRecord = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
 
-      try {
-        const email = user.email?.trim().toLowerCase();
-        const [userMatch, emailMatch] = await Promise.all([
-          supabase
-            .from("employees")
-            .select("id, name, status, opening_balance, closing_balance, collected_amount, due_amount, orders_today")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          email
-            ? supabase
-                .from("employees")
-                .select("id, name, status, opening_balance, closing_balance, collected_amount, due_amount, orders_today")
-                .ilike("email", email)
-                .maybeSingle()
-            : Promise.resolve({ data: null, error: null }),
-        ]);
+    try {
+      // If employeeInfo is already available from AuthContext, use it for direct lookup
+      if (employeeInfo?.id) {
+        const { data, error } = await supabase
+          .from("employees")
+          .select("id, name, status, opening_balance, closing_balance, collected_amount, due_amount, orders_today")
+          .eq("id", employeeInfo.id)
+          .maybeSingle();
 
-        const rec = (userMatch.data ?? emailMatch.data) as EmployeeSummaryRecord | null;
-
-        const queryError = userMatch.error ?? (emailMatch && "error" in emailMatch ? emailMatch.error : null);
-        if (queryError) {
-          console.error("Error loading employee record:", queryError);
+        if (error) {
+          console.error("Error loading employee record:", error);
           setEmployeeRecord(null);
         } else {
+          const rec = data as EmployeeSummaryRecord | null;
           setEmployeeRecord(rec);
-
           if (rec) {
             const key = `employee_balance_submitted_${rec.id}_${new Date().toISOString().slice(0,10)}`;
             const already = typeof window !== "undefined" ? localStorage.getItem(key) : null;
@@ -71,16 +59,67 @@ const EmployeeDashboardPage = () => {
             if (!already) setShowBalanceModal(true);
           }
         }
-      } catch (err) {
-        console.error("Failed loading employee record:", err);
-        setEmployeeRecord(null);
-      } finally {
         setLoading(false);
+        return;
+      }
+
+      // Fallback: lookup by user_id or email
+      const email = user.email?.trim().toLowerCase();
+      const [userMatch, emailMatch] = await Promise.all([
+        supabase
+          .from("employees")
+          .select("id, name, status, opening_balance, closing_balance, collected_amount, due_amount, orders_today")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        email
+          ? supabase
+              .from("employees")
+              .select("id, name, status, opening_balance, closing_balance, collected_amount, due_amount, orders_today")
+              .ilike("email", email)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      const rec = (userMatch.data ?? emailMatch.data) as EmployeeSummaryRecord | null;
+
+      const queryError = userMatch.error ?? (emailMatch && "error" in emailMatch ? emailMatch.error : null);
+      if (queryError) {
+        console.error("Error loading employee record:", queryError);
+        setEmployeeRecord(null);
+      } else {
+        setEmployeeRecord(rec);
+
+        if (rec) {
+          const key = `employee_balance_submitted_${rec.id}_${new Date().toISOString().slice(0,10)}`;
+          const already = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+          setOpeningInput(String(rec.opening_balance ?? 0));
+          setClosingInput(String(rec.closing_balance ?? 0));
+          if (!already) setShowBalanceModal(true);
+        }
+      }
+    } catch (err) {
+      console.error("Failed loading employee record:", err);
+      setEmployeeRecord(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, employeeInfo]);
+
+  // Initial load
+  useEffect(() => {
+    void loadEmployeeRecord();
+  }, [loadEmployeeRecord]);
+
+  // Refresh when the tab becomes visible again (e.g. after checkout)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadEmployeeRecord();
       }
     };
-
-    void loadEmployeeRecord();
-  }, [user]);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadEmployeeRecord]);
 
   const handleSaveBalances = async () => {
     if (!employeeRecord) return;
@@ -99,6 +138,8 @@ const EmployeeDashboardPage = () => {
     localStorage.setItem(key, "1");
     setShowBalanceModal(false);
     toast.success("Shift balances updated successfully! 🎉");
+    // Reload latest data from DB
+    void loadEmployeeRecord();
   };
 
   const emp = employeeRecord;
@@ -134,7 +175,12 @@ const EmployeeDashboardPage = () => {
     <div className="page-container pb-24">
       <div className="mb-5 animate-fade-in">
         <p className="text-sm font-medium text-muted-foreground">Employee Access</p>
-        <h1 className="text-2xl font-extrabold tracking-tight text-foreground">My Dashboard</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-extrabold tracking-tight text-foreground">My Dashboard</h1>
+          <Button variant="outline" size="sm" className="h-8 rounded-xl gap-1.5 text-xs" onClick={() => void loadEmployeeRecord()}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">Your daily balance, collected amount, and pending dues.</p>
       </div>
 

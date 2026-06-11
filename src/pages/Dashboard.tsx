@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { IndianRupee, TrendingUp, ShoppingBag, Package, ScanBarcode, Plus, BarChart3, Users, AlertTriangle, ArrowUpRight, Crown, ArrowDownRight, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,22 +35,32 @@ const Dashboard = () => {
   const { profile } = useShopProfile();
   const [employeeSummaries, setEmployeeSummaries] = useState<EmployeeSummaryRecord[]>([]);
 
-  useEffect(() => {
-    const loadEmployeeSummaries = async () => {
-      if (!user) return;
-      const { data, error } = await supabase
-        .from("employees")
-        .select("id, name, status, opening_balance, collected_amount, due_amount, orders_today")
-        .eq("shop_owner_id", user.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
+  const loadEmployeeSummaries = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, name, status, opening_balance, collected_amount, due_amount, orders_today")
+      .eq("shop_owner_id", user.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false });
 
-      if (!error) {
-        setEmployeeSummaries((data ?? []) as EmployeeSummaryRecord[]);
-      }
-    };
-    void loadEmployeeSummaries();
+    if (!error) {
+      setEmployeeSummaries((data ?? []) as EmployeeSummaryRecord[]);
+    }
   }, [user]);
+
+  useEffect(() => {
+    void loadEmployeeSummaries();
+  }, [loadEmployeeSummaries]);
+
+  // Refresh employee summaries when tab becomes visible (e.g. after employee makes a sale)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadEmployeeSummaries();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadEmployeeSummaries]);
 
   const greeting = getGreeting();
   const displayName = profile?.ownerName || profile?.shopName || "there";

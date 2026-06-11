@@ -145,6 +145,22 @@ async function syncRoleWithEmployeeMembership(
   }
 }
 
+const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+  let timeoutId: any;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, ms);
+  });
+  return Promise.race([
+    promise.then((val) => {
+      clearTimeout(timeoutId);
+      return val;
+    }),
+    timeout
+  ]);
+};
+
 export function AuthProvider({
   children,
 }: {
@@ -219,24 +235,39 @@ export function AuthProvider({
 
     const initializeAuth = async () => {
       try {
+        console.log("AuthContext: initializeAuth starting");
         setLoading(true);
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        console.log("AuthContext: calling getSession");
+        const sessionResult = await timeoutPromise(
+          supabase.auth.getSession(),
+          6000,
+          "Database connection timed out during session initialization. Please check your internet or disable adblockers."
+        );
+        const session = sessionResult.data.session;
+        console.log("AuthContext: getSession resolved, session:", session);
 
-        if (!mounted) return;
+        if (!mounted) {
+          console.log("AuthContext: initializeAuth but not mounted");
+          return;
+        }
 
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          const { role: resolvedRole, employeeInfo: empInfo } =
-            await syncRoleWithEmployeeMembership(session.user);
+          console.log("AuthContext: user found, syncing role");
+          const { role: resolvedRole, employeeInfo: empInfo } = await timeoutPromise(
+            syncRoleWithEmployeeMembership(session.user),
+            6000,
+            "Database connection timed out during role verification."
+          );
+          console.log("AuthContext: role resolved:", resolvedRole);
           if (mounted) {
             setRoleState(resolvedRole);
             setEmployeeInfo(empInfo);
           }
         } else {
+          console.log("AuthContext: no user found, setting onboarding role");
           if (mounted) {
             setRoleState("onboarding");
             setEmployeeInfo(null);
@@ -244,18 +275,28 @@ export function AuthProvider({
         }
       } catch (error) {
         console.error("Failed to initialize auth session:", error);
+        if (mounted) {
+          setRoleState("onboarding");
+          setEmployeeInfo(null);
+        }
       } finally {
+        console.log("AuthContext: initializeAuth finally, setting loading to false");
         if (mounted) setLoading(false);
       }
     };
 
     initializeAuth();
 
+    console.log("AuthContext: subscribing to onAuthStateChange");
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!mounted) return;
+      async (event, session) => {
+        console.log("AuthContext: onAuthStateChange fired, event:", event, "session:", session);
+        if (!mounted) {
+          console.log("AuthContext: onAuthStateChange but not mounted");
+          return;
+        }
 
         setLoading(true);
         setSession(session);
@@ -263,14 +304,20 @@ export function AuthProvider({
 
         try {
           if (session?.user) {
-            const { role: resolvedRole, employeeInfo: empInfo } =
-              await syncRoleWithEmployeeMembership(session.user);
+            console.log("AuthContext: onAuthStateChange user found, syncing role");
+            const { role: resolvedRole, employeeInfo: empInfo } = await timeoutPromise(
+              syncRoleWithEmployeeMembership(session.user),
+              6000,
+              "Database connection timed out during auth change verification."
+            );
+            console.log("AuthContext: onAuthStateChange role resolved:", resolvedRole);
 
             if (mounted) {
               setRoleState(resolvedRole);
               setEmployeeInfo(empInfo);
             }
           } else {
+            console.log("AuthContext: onAuthStateChange no user, setting onboarding");
             if (mounted) {
               setRoleState("onboarding");
               setEmployeeInfo(null);
@@ -278,7 +325,12 @@ export function AuthProvider({
           }
         } catch (error) {
           console.error("Error in onAuthStateChange role sync:", error);
+          if (mounted) {
+            setRoleState("onboarding");
+            setEmployeeInfo(null);
+          }
         } finally {
+          console.log("AuthContext: onAuthStateChange finally, setting loading to false");
           if (mounted) setLoading(false);
         }
       }

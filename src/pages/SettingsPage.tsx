@@ -161,17 +161,27 @@ function ShopProfileForm({ onClose }: { onClose: () => void }) {
 
 // ─── Account / Profile Settings ──────────────────────────────────────────────
 function AccountSettings({ onClose, employeeView }: { onClose: () => void; employeeView: boolean }) {
-  const { user } = useAuth();
+  const { user, employeeInfo, refreshRole } = useAuth();
   const { profile } = useShopProfile();
-  const [displayName, setDisplayName] = useState(profile.ownerName || "");
+  const [displayName, setDisplayName] = useState(
+    employeeView
+      ? (employeeInfo?.name || "")
+      : (profile.ownerName || "")
+  );
   const [savingName, setSavingName] = useState(false);
   const [showPasswordSection, setShowPasswordSection] = useState(false);
 
   useEffect(() => {
-    if (profile.ownerName) {
-      setDisplayName(profile.ownerName);
+    if (employeeView) {
+      if (employeeInfo?.name) {
+        setDisplayName(employeeInfo.name);
+      }
+    } else {
+      if (profile.ownerName) {
+        setDisplayName(profile.ownerName);
+      }
     }
-  }, [profile.ownerName]);
+  }, [employeeView, employeeInfo?.name, profile.ownerName]);
 
   const handleSaveDisplayName = async () => {
     if (!displayName.trim()) {
@@ -180,8 +190,18 @@ function AccountSettings({ onClose, employeeView }: { onClose: () => void; emplo
     }
     setSavingName(true);
     try {
-      const { error } = await supabase.auth.updateUser({ data: { display_name: displayName.trim() } });
-      if (error) throw error;
+      const { error: authError } = await supabase.auth.updateUser({ data: { display_name: displayName.trim() } });
+      if (authError) throw authError;
+
+      if (employeeView && user) {
+        const { error: empError } = await supabase
+          .from("employees")
+          .update({ name: displayName.trim(), updated_at: new Date().toISOString() })
+          .eq("user_id", user.id);
+        if (empError) throw empError;
+        await refreshRole();
+      }
+
       toast({ title: "Display name updated!" });
     } catch (e) {
       toast({ title: "Failed to update name", description: String(e), variant: "destructive" });
@@ -189,6 +209,7 @@ function AccountSettings({ onClose, employeeView }: { onClose: () => void; emplo
       setSavingName(false);
     }
   };
+
 
   return (
     <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">

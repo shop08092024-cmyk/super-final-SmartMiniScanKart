@@ -3,6 +3,31 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
+// Capture console errors and uncaught exceptions for loading troubleshooting
+const capturedErrors: string[] = [];
+const originalError = console.error;
+console.error = (...args) => {
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  if (msg.includes("Extension context invalidated") || msg.includes("content.js")) {
+    originalError.apply(console, args);
+    return;
+  }
+  capturedErrors.push(msg);
+  originalError.apply(console, args);
+};
+window.addEventListener('error', (event) => {
+  const msg = event.message || String(event.error || '');
+  if (msg.includes("Extension context invalidated") || msg.includes("content.js")) return;
+  capturedErrors.push(msg);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = String(event.reason || '');
+  if (reason.includes("Extension context invalidated") || reason.includes("content.js")) return;
+  capturedErrors.push(`Unhandled Rejection: ${reason}`);
+});
+(window as any).__capturedErrors = capturedErrors;
+
+
 const container = document.getElementById("root");
 if (!container) {
   document.body.innerHTML =
