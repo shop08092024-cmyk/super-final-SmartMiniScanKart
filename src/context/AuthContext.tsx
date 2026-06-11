@@ -145,7 +145,7 @@ async function syncRoleWithEmployeeMembership(
   }
 }
 
-const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+function timeoutPromise<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
   let timeoutId: any;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -159,7 +159,7 @@ const timeoutPromise = <T>(promise: Promise<T>, ms: number, errorMessage: string
     }),
     timeout
   ]);
-};
+}
 
 export function AuthProvider({
   children,
