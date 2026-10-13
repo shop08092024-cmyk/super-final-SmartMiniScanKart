@@ -57,27 +57,23 @@ export function ShopProfileProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    console.log("ShopProfileContext: refresh starting. user:", user?.id, "employeeInfo:", employeeInfo);
     if (!user) {
-      console.log("ShopProfileContext: no user, setting loading to false");
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
       const ownerId = employeeInfo?.shopOwnerId ?? user.id;
-      console.log("ShopProfileContext: querying shop_profiles for user_id:", ownerId);
       const { data, error } = await supabase
         .from("shop_profiles")
         .select("*")
         .eq("user_id", ownerId)
         .maybeSingle();
-      
+
       if (error) {
         console.error("ShopProfileContext: Supabase query returned error:", error);
       }
-      
-      console.log("ShopProfileContext: query data:", data);
+
       if (data) {
         setProfile({
           id: data.id,
@@ -102,12 +98,10 @@ export function ShopProfileProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("ShopProfileContext: exception caught in refresh:", e);
     }
-    console.log("ShopProfileContext: setting loading to false");
     setLoading(false);
   }, [user, employeeInfo]);
 
   useEffect(() => {
-    console.log("ShopProfileContext: useEffect triggering refresh");
     refresh();
   }, [refresh]);
 
