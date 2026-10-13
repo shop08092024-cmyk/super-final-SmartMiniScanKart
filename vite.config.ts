@@ -33,5 +33,14 @@ export default defineConfig((async ({ mode }: any) => {
       },
       dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
     },
+    build: {
+      // Strip console.log / console.debug from production bundles (console.error and warn stay)
+      minify: "terser",
+      terserOptions: {
+        compress: {
+          pure_funcs: ["console.log", "console.debug"],
+        },
+      },
+    },
   };
 }) as any);
